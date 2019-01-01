@@ -2,4 +2,5 @@ data/**
 .ipynb_checkpoints/**
 id_rsa
 id_rsa.pub
+github.ipynb
 py/github.py
