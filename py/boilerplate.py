@@ -14,7 +14,7 @@ import gc
 import math
 from scipy import stats
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
-from sklearn.linear_model import Lasso, LassoCV, SGDClassifier
+from sklearn.linear_model import Lasso, LassoCV
 # Comment this if the data visualisations doesn't work on your side
 get_ipython().magic(u'matplotlib inline')
 plt.style.use('bmh')
