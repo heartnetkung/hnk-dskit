@@ -1,15 +1,20 @@
 # # RUN MODE
-DEV_MODE = True
+DEV_MODE = False
+# hack
+get_ipython().system(u' pip install --upgrade --user --quiet seaborn')
+import pkg_resources
+pkg_resources.require("seaborn>=0.9.0")
+import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import gc
+import math
 from scipy import stats
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
-from sklearn.linear_model import ElasticNet, Lasso, LassoCV
+from sklearn.linear_model import Lasso, LassoCV, SGDClassifier
 # Comment this if the data visualisations doesn't work on your side
 get_ipython().magic(u'matplotlib inline')
 plt.style.use('bmh')
@@ -38,6 +43,11 @@ def heatMap(df, abs_cor=0.4):
     )
 if DEV_MODE:
     heatMap(boston_df)
+# ## basicInfo(df)
+def basicInfo(df):
+  print('shape:', df.shape)
+  df.info()
+  return df.head()
 # ## getNA(df)
 def getNA(dataframe):
     columns = []
@@ -86,44 +96,24 @@ def singleFieldAnalysis(column, df=None):
 if DEV_MODE:
     singleFieldAnalysis('AGE', boston_df)
     singleFieldAnalysis(np.log1p(boston_df['AGE']))
-# ## scatter(y, x1, x2 = None, x3 = None, x4 = None, df = None)
-def scatter(y, x1, x2=None, x3=None, x4=None, df=None):
-    x1_data = getColumnData(df, x1)
-    x2_data = getColumnData(df, x2)
-    x3_data = getColumnData(df, x3)
-    x4_data = getColumnData(df, x4)
-    y_data = getColumnData(df, y)
-    plt.figure(figsize=(12, 8))
-    plt.subplot(2, 2, 1)
-    plt.scatter(x=x1_data, y=y_data)
-    if df is not None:
-        plt.ylabel(y)
-        plt.xlabel(x1)
-    if x2 is not None:
-        plt.subplot(2, 2, 2)
-        plt.scatter(x=x2_data, y=y_data)
-        if df is not None:
-            plt.ylabel(y)
-            plt.xlabel(x2)
-    if x3 is not None:
-        plt.subplot(2, 2, 3)
-        plt.scatter(x=x3_data, y=y_data)
-        if df is not None:
-            plt.ylabel(y)
-            plt.xlabel(x3)
-    if x4 is not None:
-        plt.subplot(2, 2, 4)
-        plt.scatter(x=x4_data, y=y_data)
-        if df is not None:
-            plt.ylabel(y)
-            plt.xlabel(x4)
-if DEV_MODE:
-    print(scatter('AGE', 'NOX', df=boston_df))
+# ## boxplot(df, columns, label)
+def boxplot(df, columns, label):
+  fig, axes = plt.subplots(nrows= int(math.floor(len(columns)/2))+1,ncols=2)
+  fig.set_size_inches(12, 18)
+  sns.boxplot(data=df,y=label,orient="v", ax=axes[0][0])
+  for i, column in enumerate(columns):
+    sns.boxplot(data=df,y=label,orient="v", x= column, ax=axes[int(math.floor((i+1)/2))][(i+1)%2])
+# ## scatter(df, columns, label)
+def scatter(df, columns, label):
+  fig, axes = plt.subplots(nrows= int(math.ceil(len(columns)/2)),ncols=2)
+  fig.set_size_inches(12, 18)
+  for i, column in enumerate(columns):
+    sns.scatterplot(data=df,y=label, x= column, ax=axes[int(math.floor(i/2))][i%2])
 # # ML Library
 # ## doXgbCV(model, train, test, metrics, cv_folds = 5, early_stopping_rounds = 50)
-def doXgbCV(model, train, test, metrics, cv_folds=5, early_stopping_rounds=50):
+def doXgbCV(model, feature, label, metrics, cv_folds=5, early_stopping_rounds=50):
     xgb_param = model.get_xgb_params()
-    xgtrain = xgb.DMatrix(train.values, label=test.values)
+    xgtrain = xgb.DMatrix(feature.values, label=label.values)
     cvresult = xgb.cv(
         xgb_param,
         xgtrain,
@@ -134,31 +124,30 @@ def doXgbCV(model, train, test, metrics, cv_folds=5, early_stopping_rounds=50):
     )
     print(cvresult[['test-rmse-mean', 'test-rmse-std']].tail(1))
     return cvresult
+# ## doLassoCV(feature, label, metrics="neg_mean_squared_error", cv_folds = 5, alpha=1)
 def doSklearnCV(
-    model, train, test, metrics="neg_mean_squared_error", cv_folds=5
+    model, feature, label, metrics="neg_mean_squared_error", cv_folds=5
 ):
     kf = KFold(
         cv_folds, shuffle=True, random_state=42
-    ).get_n_splits(train.values)
-    print(train.shape)
-    print(test.shape)
+    ).get_n_splits(feature.values)
     rmse = np.sqrt(
         -cross_val_score(
-            model, train.values, test.values, scoring=metrics, cv=kf
+            model, feature.values, label.values, scoring=metrics, cv=kf
         )
     )
-    print("Score: {:.4f} ({:.4f})".format(rmse.mean(), rmse.std()))
+    print("RMSE Score: {:.4f} ({:.4f})".format(rmse.mean(), rmse.std()))
     return (rmse, model)
-# ## doLassoCV(train, test, metrics="neg_mean_squared_error", cv_folds = 5, alpha=1)
 def doLassoCV(
-    train, test, metrics="neg_mean_squared_error", cv_folds=5, alpha=1
+    feature, label, metrics="neg_mean_squared_error", cv_folds=5, alpha=1
 ):
-    return doSklearnCV(Lasso(alpha=alpha), train, test, metrics, cv_folds)
-# ## lassoFeatureImportance(train, test,  cv=5)
-def lassoFeatureImportance(train, test, cv=5):
+    return doSklearnCV(Lasso(alpha=alpha), feature, label, metrics, cv_folds)
+# ## lassoFeatureImportance(feature, label,  cv=5)
+# The technique for feature selection using Lasso is highlighted in this [paper](https://beta.vu.nl/nl/Images/werkstuk-fonti_tcm235-836234.pdf)
+def lassoFeatureImportance(feature, label, cv=5):
     model = LassoCV(alphas=[1, 0.1, 0.001, 0.0005], cv=cv)
-    model.fit(train, test)
-    coef = pd.Series(model.coef_, index=train.columns)
+    model.fit(feature, label)
+    coef = pd.Series(model.coef_, index=feature.columns)
     print('Best alpha:', model.alpha_)
     print('Removed features:', coef[coef == 0].index)
     coef[coef != 0].sort_values().plot(kind="barh")
